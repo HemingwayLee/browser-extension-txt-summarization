@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Side Panel Extension</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>YouTube Subtitle Manager</h1>
+    </header>
+    
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="current-page">Saved Videos</button>
+      <button class="tab-btn" data-tab="server-config">Server Config</button>
+      <button class="tab-btn" data-tab="gemini-config">Gemini API</button>
+    </nav>
+    
+    <main>
+      <div id="current-page-tab" class="tab-content active">
+        <div class="content">
+          <h2>YouTube URL Manager</h2>
+          
+          <div class="url-input-section">
+            <input type="text" id="youtubeUrlInput" placeholder="Enter YouTube URL..." class="url-input">
+            <div class="language-selection">
+              <select id="languageSelect">
+                <option value="en">English</option>
+                <option value="zh-TW" selected>Chinese (Traditional)</option>
+                <option value="zh-CN">Chinese (Simplified)</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+              </select>
+            </div>
+            <button id="addUrlBtn" class="add-btn">Add URL</button>
+          </div>
+
+          <div class="search-section">
+            <input type="text" id="searchInput" placeholder="Search by subtitle keywords..." class="search-input">
+            <button id="searchBtn" class="add-btn">Search</button>
+            <button id="clearSearchBtn" class="clear-btn">Clear</button>
+          </div>
+
+          <div class="url-list-section">
+            <h3>Saved YouTube URLs</h3>
+            <div id="urlList" class="url-list"></div>
+            <div id="pagination" class="pagination"></div>
+          </div>
+          
+          <div class="info">
+            <p id="currentTime"></p>
+            <p id="tabInfo">Current tab info will appear here</p>
+          </div>
+        </div>
+      </div>
+      
+      <div id="server-config-tab" class="tab-content">
+        <div class="content">
+          <h2>Local Server Configuration</h2>
+          
+          <div class="server-input-section">
+            <input type="text" id="serverUrlInput" placeholder="Enter server URL (e.g., 127.0.0.1:5000)" class="server-input">
+            <button id="addServerBtn" class="add-btn">Add Server</button>
+          </div>
+          
+          <div class="server-list-section">
+            <h3>Configured Servers</h3>
+            <div id="serverList" class="server-list"></div>
+          </div>
+          
+          <div class="server-status">
+            <p id="serverStatus">Server status will appear here</p>
+          </div>
+        </div>
+      </div>
+      
+      <div id="gemini-config-tab" class="tab-content">
+        <div class="content">
+          <h2>Gemini API Configuration</h2>
+          
+          <div class="gemini-input-section">
+            <input type="password" id="geminiApiKeyInput" placeholder="Enter Gemini API Key..." class="gemini-input">
+            <button id="saveApiKeyBtn" class="add-btn">Save API Key</button>
+            <button id="clearApiKeyBtn" class="clear-btn">Clear</button>
+          </div>
+          
+          <div class="gemini-status-section">
+            <h3>API Key Status</h3>
+            <div id="geminiStatus" class="gemini-status">
+              <p id="apiKeyStatus">No API key configured</p>
+            </div>
+          </div>
+          
+          <div class="gemini-info">
+            <h3>Instructions</h3>
+            <p>Get your Gemini API key from <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a></p>
+            <p>Your API key will be stored securely in local storage.</p>
+          </div>
+        </div>
+      </div>
+    </main>
+    
+    <footer>
+      <p>Side Panel Extension v1.4</p>
+    </footer>
+  </div>
+  
+  <script src="sidepanel.js"></script>
+</body>
+</html>
