@@ -17,6 +17,11 @@ document.addEventListener('DOMContentLoaded', function() {
   const clearApiKeyBtn = document.getElementById('clearApiKeyBtn');
   const apiKeyStatus = document.getElementById('apiKeyStatus');
 
+  const ollamaUrlInput = document.getElementById('ollamaUrlInput');
+  const saveOllamaUrlBtn = document.getElementById('saveOllamaUrlBtn');
+  const clearOllamaUrlBtn = document.getElementById('clearOllamaUrlBtn');
+  const ollamaUrlStatus = document.getElementById('ollamaUrlStatus');
+
   const tabButtons = document.querySelectorAll('.tab-btn');
   const tabContents = document.querySelectorAll('.tab-content');
 
@@ -24,11 +29,14 @@ document.addEventListener('DOMContentLoaded', function() {
   const searchBtn = document.getElementById('searchBtn');
   const clearSearchBtn = document.getElementById('clearSearchBtn');
 
+  const llmSelect = document.getElementById('llmSelect');
+
   let currentPage = 1;
   const urlsPerPage = 5;
   let allUrls = [];
   let configuredServers = [];
   let currentSearchKeyword = '';
+  let selectedLLM = 'gemini';
 
   function switchTab(tabName) {
     tabButtons.forEach(btn => btn.classList.remove('active'));
@@ -289,6 +297,97 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  function saveOllamaUrl() {
+    const ollamaUrl = ollamaUrlInput.value.trim();
+
+    if (!ollamaUrl) {
+      alert('Please enter an Ollama URL');
+      return;
+    }
+
+    if (!ollamaUrl.startsWith('http://') && !ollamaUrl.startsWith('https://')) {
+      alert('Please enter a valid URL starting with http:// or https://');
+      return;
+    }
+
+    chrome.storage.local.set({ 'ollamaUrl': ollamaUrl }, function() {
+      if (chrome.runtime.lastError) {
+        console.error('Error saving Ollama URL:', chrome.runtime.lastError);
+        alert('Error saving Ollama URL');
+        return;
+      }
+
+      ollamaUrlInput.value = '';
+      updateOllamaUrlStatus();
+      alert('Ollama URL saved successfully');
+    });
+  }
+
+  function clearOllamaUrl() {
+    if (confirm('Are you sure you want to clear the Ollama URL?')) {
+      chrome.storage.local.remove(['ollamaUrl'], function() {
+        if (chrome.runtime.lastError) {
+          console.error('Error clearing Ollama URL:', chrome.runtime.lastError);
+          return;
+        }
+        updateOllamaUrlStatus();
+        alert('Ollama URL cleared successfully');
+      });
+    }
+  }
+
+  function loadOllamaUrl() {
+    chrome.storage.local.get(['ollamaUrl'], function(result) {
+      if (chrome.runtime.lastError) {
+        console.error('Error loading Ollama URL:', chrome.runtime.lastError);
+        return;
+      }
+      updateOllamaUrlStatus(result.ollamaUrl);
+    });
+  }
+
+  function updateOllamaUrlStatus(ollamaUrl = null) {
+    if (ollamaUrl === null) {
+      chrome.storage.local.get(['ollamaUrl'], function(result) {
+        if (chrome.runtime.lastError) {
+          console.error('Error checking Ollama URL:', chrome.runtime.lastError);
+          return;
+        }
+        displayOllamaUrlStatus(result.ollamaUrl);
+      });
+    } else {
+      displayOllamaUrlStatus(ollamaUrl);
+    }
+  }
+
+  function displayOllamaUrlStatus(ollamaUrl) {
+    if (ollamaUrl) {
+      ollamaUrlStatus.innerHTML = `<span style="color: #4CAF50;">✓ Ollama URL configured: ${ollamaUrl}</span>`;
+    } else {
+      ollamaUrlStatus.innerHTML = '<span style="color: #f44336;">No Ollama URL configured</span>';
+    }
+  }
+
+  function saveLLMSelection() {
+    selectedLLM = llmSelect.value;
+    chrome.storage.local.set({ 'selectedLLM': selectedLLM }, function() {
+      if (chrome.runtime.lastError) {
+        console.error('Error saving LLM selection:', chrome.runtime.lastError);
+      }
+    });
+  }
+
+  function loadLLMSelection() {
+    chrome.storage.local.get(['selectedLLM'], function(result) {
+      if (chrome.runtime.lastError) {
+        console.error('Error loading LLM selection:', chrome.runtime.lastError);
+        return;
+      }
+      selectedLLM = result.selectedLLM || 'gemini';
+      llmSelect.value = selectedLLM;
+    });
+  }
+
 
 
 
@@ -412,12 +511,12 @@ document.addEventListener('DOMContentLoaded', function() {
           reject(new Error('Error accessing API key: ' + chrome.runtime.lastError.message));
           return;
         }
-        
+
         if (!result.geminiApiKey) {
-          reject(new Error('No Gemini API key configured. Please add your API key in the Gemini API tab.'));
+          reject(new Error('No Gemini API key configured. Please add your API key in the LLM settings tab.'));
           return;
         }
-        
+
         try {
           const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${result.geminiApiKey}`, {
             method: 'POST',
@@ -432,17 +531,62 @@ document.addEventListener('DOMContentLoaded', function() {
               }]
             })
           });
-          
+
           if (!response.ok) {
             throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
           }
-          
+
           const data = await response.json();
-          
+
           if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
             resolve(data.candidates[0].content.parts[0].text);
           } else {
             reject(new Error('No summary generated by Gemini API'));
+          }
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+  }
+
+  async function callOllamaAPI(subtitles) {
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.get(['ollamaUrl'], async function(result) {
+        if (chrome.runtime.lastError) {
+          reject(new Error('Error accessing Ollama URL: ' + chrome.runtime.lastError.message));
+          return;
+        }
+
+        if (!result.ollamaUrl) {
+          reject(new Error('No Ollama URL configured. Please add your Ollama URL in the LLM settings tab.'));
+          return;
+        }
+
+        try {
+          const ollamaUrl = result.ollamaUrl.endsWith('/') ? result.ollamaUrl.slice(0, -1) : result.ollamaUrl;
+          const response = await fetch(`${ollamaUrl}/api/generate`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gemma3:12b',
+              prompt: `以下是YouTube影片的台詞，請幫我把這些台詞總結成清晰剪短的內容，並且避免提到阿星，讓我可以分享到其他的社群平台：\n\n${subtitles}`,
+              stream: false
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+          }
+
+          const data = await response.json();
+
+          if (data.response) {
+            resolve(data.response);
+          } else {
+            reject(new Error('No summary generated by Ollama API'));
           }
         } catch (error) {
           reject(error);
@@ -630,21 +774,26 @@ document.addEventListener('DOMContentLoaded', function() {
   async function summarizeUrl(url) {
     // Find the URL item to get subtitles
     const urlItem = allUrls.find(item => (typeof item === 'string' ? item : item.url) === url);
-    
+
     if (!urlItem || !urlItem.subtitles) {
       alert('No subtitles available for this video to summarize');
       return;
     }
-    
+
     // Find the summarize button for this URL to show loading state
     const summarizeButton = document.querySelector(`button[data-url="${url}"].summarize-btn`);
     if (summarizeButton) {
       summarizeButton.disabled = true;
       summarizeButton.textContent = 'Summarizing...';
     }
-    
+
     try {
-      const summary = await callGeminiAPI(urlItem.subtitles);
+      let summary;
+      if (selectedLLM === 'ollama') {
+        summary = await callOllamaAPI(urlItem.subtitles);
+      } else {
+        summary = await callGeminiAPI(urlItem.subtitles);
+      }
       showSummaryPopup(summary, url);
     } catch (error) {
       console.error('Error summarizing video:', error);
@@ -818,6 +967,8 @@ document.addEventListener('DOMContentLoaded', function() {
   addServerBtn.addEventListener('click', addServer);
   saveApiKeyBtn.addEventListener('click', saveGeminiApiKey);
   clearApiKeyBtn.addEventListener('click', clearGeminiApiKey);
+  saveOllamaUrlBtn.addEventListener('click', saveOllamaUrl);
+  clearOllamaUrlBtn.addEventListener('click', clearOllamaUrl);
   searchBtn.addEventListener('click', searchVideos);
   clearSearchBtn.addEventListener('click', clearSearch);
 
@@ -839,15 +990,25 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
+  ollamaUrlInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      saveOllamaUrl();
+    }
+  });
+
   searchInput.addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
       searchVideos();
     }
   });
 
+  llmSelect.addEventListener('change', saveLLMSelection);
+
   loadUrlsFromStorage();
   loadServersFromStorage();
   loadGeminiApiKey();
+  loadOllamaUrl();
+  loadLLMSelection();
   updateTime();
   updateTabInfo();
   updateServerStatus();

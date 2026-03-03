@@ -15,14 +15,22 @@
     <nav class="tabs">
       <button class="tab-btn active" data-tab="current-page">Saved Videos</button>
       <button class="tab-btn" data-tab="server-config">Server Config</button>
-      <button class="tab-btn" data-tab="gemini-config">Gemini API</button>
+      <button class="tab-btn" data-tab="gemini-config">LLM settings</button>
     </nav>
     
     <main>
       <div id="current-page-tab" class="tab-content active">
         <div class="content">
           <h2>YouTube URL Manager</h2>
-          
+
+          <div class="llm-selection-section">
+            <label for="llmSelect"><strong>Summarization LLM:</strong></label>
+            <select id="llmSelect">
+              <option value="gemini" selected>Gemini</option>
+              <option value="ollama">Ollama</option>
+            </select>
+          </div>
+
           <div class="url-input-section">
             <input type="text" id="youtubeUrlInput" placeholder="Enter YouTube URL..." class="url-input">
             <div class="language-selection">
@@ -81,7 +89,7 @@
       
       <div id="gemini-config-tab" class="tab-content">
         <div class="content">
-          <h2>Gemini API Configuration</h2>
+          <h2>LLM Settings</h2>
           
           <div class="gemini-input-section">
             <input type="password" id="geminiApiKeyInput" placeholder="Enter Gemini API Key..." class="gemini-input">
@@ -100,6 +108,29 @@
             <h3>Instructions</h3>
             <p>Get your Gemini API key from <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a></p>
             <p>Your API key will be stored securely in local storage.</p>
+          </div>
+
+          <div class="ollama-section">
+            <h3>Ollama Configuration</h3>
+
+            <div class="ollama-input-section">
+              <input type="text" id="ollamaUrlInput" placeholder="Enter Ollama URL (e.g., http://localhost:11434)" class="gemini-input">
+              <button id="saveOllamaUrlBtn" class="add-btn">Save URL</button>
+              <button id="clearOllamaUrlBtn" class="clear-btn">Clear</button>
+            </div>
+
+            <div class="ollama-status-section">
+              <h3>Ollama URL Status</h3>
+              <div id="ollamaStatus" class="gemini-status">
+                <p id="ollamaUrlStatus">No Ollama URL configured</p>
+              </div>
+            </div>
+
+            <div class="gemini-info">
+              <h3>Instructions</h3>
+              <p>Enter the URL where your Ollama instance is running (typically http://localhost:11434)</p>
+              <p>The URL will be stored securely in local storage.</p>
+            </div>
           </div>
         </div>
       </div>
