@@ -391,6 +391,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   function isValidYouTubeUrl(url) {
     const youtubeRegex = /^(https?\:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/;
     return youtubeRegex.test(url);
@@ -400,6 +406,20 @@ document.addEventListener('DOMContentLoaded', function() {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
     const match = url.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
+  }
+
+  async function getYouTubeVideoTitle(url) {
+    try {
+      const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+      if (!response.ok) {
+        return null;
+      }
+      const data = await response.json();
+      return data.title || null;
+    } catch (error) {
+      console.error('Error fetching video title:', error);
+      return null;
+    }
   }
 
   async function getYouTubeSubtitles(videoId, language = 'en') {
@@ -471,13 +491,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const videoId = extractVideoId(url);
     const selectedLanguage = languageSelect.value;
     let subtitles = null;
-    
+
     if (videoId) {
       subtitles = await getYouTubeSubtitles(videoId, selectedLanguage);
     }
 
+    const title = await getYouTubeVideoTitle(url);
+
     const urlObject = {
       url: url,
+      title: title,
       subtitles: subtitles,
       dateAdded: new Date().toISOString()
     };
@@ -857,12 +880,14 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
       urlList.innerHTML = urlsToShow.map((item, index) => {
         const url = typeof item === 'string' ? item : item.url;
+        const title = typeof item === 'object' && item.title ? item.title : null;
         const subtitles = typeof item === 'object' && item.subtitles ? item.subtitles : null;
         const dateAdded = typeof item === 'object' && item.dateAdded ? new Date(item.dateAdded).toLocaleDateString() : '';
-        
+
         return `
           <div class="url-item">
             <div class="url-text">
+              ${title ? `<div class="video-title">${escapeHtml(title)}</div>` : ''}
               <a href="${url}" target="_blank">${url}</a>
               ${dateAdded ? `<small style="color: #666; display: block;">Added: ${dateAdded}</small>` : ''}
               ${subtitles ? `<details style="margin-top: 8px;"><summary style="cursor: pointer; color: #007acc;">Subtitles</summary><div style="max-height: 150px; overflow-y: auto; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px; margin-top: 4px;">${subtitles}</div></details>` : '<small style="color: #999;">No subtitles available</small>'}
