@@ -403,7 +403,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function extractVideoId(url) {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|&v=)([^#&?]*).*/;
     const match = url.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
   }
@@ -502,6 +502,7 @@ document.addEventListener('DOMContentLoaded', function() {
       url: url,
       title: title,
       subtitles: subtitles,
+      summary: null,
       dateAdded: new Date().toISOString()
     };
 
@@ -817,7 +818,11 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         summary = await callGeminiAPI(urlItem.subtitles);
       }
+      // Persist the summary on the item so it survives reloads, overriding any previous result
+      urlItem.summary = summary;
+      saveUrlsToStorage(allUrls);
       showSummaryPopup(summary, url);
+      displayUrls();
     } catch (error) {
       console.error('Error summarizing video:', error);
       alert('Error summarizing video: ' + error.message);
@@ -882,6 +887,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const url = typeof item === 'string' ? item : item.url;
         const title = typeof item === 'object' && item.title ? item.title : null;
         const subtitles = typeof item === 'object' && item.subtitles ? item.subtitles : null;
+        const summary = typeof item === 'object' && item.summary ? item.summary : null;
         const dateAdded = typeof item === 'object' && item.dateAdded ? new Date(item.dateAdded).toLocaleDateString() : '';
 
         return `
@@ -891,10 +897,11 @@ document.addEventListener('DOMContentLoaded', function() {
               <a href="${url}" target="_blank">${url}</a>
               ${dateAdded ? `<small style="color: #666; display: block;">Added: ${dateAdded}</small>` : ''}
               ${subtitles ? `<details style="margin-top: 8px;"><summary style="cursor: pointer; color: #007acc;">Subtitles</summary><div style="max-height: 150px; overflow-y: auto; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px; margin-top: 4px;">${subtitles}</div></details>` : '<small style="color: #999;">No subtitles available</small>'}
+              ${summary ? `<details style="margin-top: 8px;" open><summary style="cursor: pointer; color: #007acc;">Summary</summary><div style="max-height: 200px; overflow-y: auto; padding: 8px; background: #eef7ff; border-radius: 4px; font-size: 12px; margin-top: 4px; white-space: pre-wrap;">${escapeHtml(summary)}</div></details>` : ''}
             </div>
             <div class="button-group">
               <button class="delete-btn" data-url="${url}" data-index="${startIndex + index}">Delete</button>
-              <button class="summarize-btn" data-url="${url}" data-index="${startIndex + index}">Summarize</button>
+              <button class="summarize-btn" data-url="${url}" data-index="${startIndex + index}">${summary ? 'Re-summarize' : 'Summarize'}</button>
             </div>
           </div>
         `;
