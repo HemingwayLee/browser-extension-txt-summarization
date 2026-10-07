@@ -29,6 +29,19 @@ document.addEventListener('DOMContentLoaded', function() {
   const loadWebllmBtn = document.getElementById('loadWebllmBtn');
   const deleteWebllmBtn = document.getElementById('deleteWebllmBtn');
 
+  const screenshotEnabledInput = document.getElementById('screenshotEnabled');
+  const screenshotOptions = document.getElementById('screenshotOptions');
+  const screenshotCountInput = document.getElementById('screenshotCount');
+  const screenshotRatioSelect = document.getElementById('screenshotRatio');
+  const screenshotMarginInput = document.getElementById('screenshotMargin');
+  const screenshotConfidenceInput = document.getElementById('screenshotConfidence');
+  const screenshotMinAreaInput = document.getElementById('screenshotMinArea');
+  const screenshotSaveState = document.getElementById('screenshotSaveState');
+  const resetScreenshotSettingsBtn = document.getElementById('resetScreenshotSettingsBtn');
+  const ocrBadge = document.getElementById('ocrBadge');
+  const ocrMessage = document.getElementById('ocrMessage');
+  const loadOcrBtn = document.getElementById('loadOcrBtn');
+
   const tabButtons = document.querySelectorAll('.tab-btn');
   const tabContents = document.querySelectorAll('.tab-content');
 
@@ -59,6 +72,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
   const OLLAMA_MODEL = 'gemma3:12b';
   let ollamaUrl = '';
+
+  // Loaded on first use; holds the OCR model and screenshot storage
+  const loadScreenshotModule = () => import('./screenshot/screenshots.js');
+  let screenshotSettings = null;
+  // Screenshot runs by video URL: { state: 'running' | 'done' | 'error', text }
+  const screenshotJobs = new Map();
+  // Latest screenshots by video URL: { shots, frameCount }. Kept in memory only, so they are gone
+  // when the side panel closes; the user downloads the ones worth keeping.
+  const screenshotResults = new Map();
+  let screenshotSaveTimer = null;
 
   // Status shown on the LLM settings page.
   // WebLLM: checking | unsupported | not-downloaded | downloaded | loading | loaded | error
@@ -397,6 +420,238 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  function storageGet(keys) {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(keys, (result) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error reading storage:', chrome.runtime.lastError);
+          resolve({});
+          return;
+        }
+        resolve(result || {});
+      });
+    });
+  }
+
+  async function loadScreenshotSettings() {
+    const { normalizeScreenshotSettings } = await loadScreenshotModule();
+    const result = await storageGet(['screenshotSettings']);
+    screenshotSettings = normalizeScreenshotSettings(result.screenshotSettings);
+    fillScreenshotSettingsForm();
+    return screenshotSettings;
+  }
+
+  function fillScreenshotSettingsForm() {
+    screenshotEnabledInput.checked = screenshotSettings.enabled;
+    screenshotCountInput.value = screenshotSettings.count;
+    screenshotRatioSelect.value = screenshotSettings.ratio;
+    screenshotMarginInput.value = screenshotSettings.margin;
+    screenshotConfidenceInput.value = screenshotSettings.confidence;
+    screenshotMinAreaInput.value = screenshotSettings.minArea;
+    screenshotOptions.classList.toggle('disabled', !screenshotSettings.enabled);
+  }
+
+  async function storeScreenshotSettings(settings, message) {
+    const { normalizeScreenshotSettings } = await loadScreenshotModule();
+    screenshotSettings = normalizeScreenshotSettings(settings);
+    fillScreenshotSettingsForm();
+    chrome.storage.local.set({ 'screenshotSettings': screenshotSettings }, function() {
+      if (chrome.runtime.lastError) {
+        console.error('Error saving screenshot settings:', chrome.runtime.lastError);
+        screenshotSaveState.textContent = 'Could not save';
+        return;
+      }
+      screenshotSaveState.textContent = message;
+      clearTimeout(screenshotSaveTimer);
+      screenshotSaveTimer = setTimeout(() => { screenshotSaveState.textContent = ''; }, 2000);
+    });
+  }
+
+  function saveScreenshotSettingsFromForm() {
+    storeScreenshotSettings({
+      enabled: screenshotEnabledInput.checked,
+      count: screenshotCountInput.value,
+      ratio: screenshotRatioSelect.value,
+      margin: screenshotMarginInput.value,
+      confidence: screenshotConfidenceInput.value,
+      minArea: screenshotMinAreaInput.value
+    }, 'Saved');
+  }
+
+  async function resetScreenshotSettings() {
+    const { DEFAULT_SCREENSHOT_SETTINGS } = await loadScreenshotModule();
+    storeScreenshotSettings(DEFAULT_SCREENSHOT_SETTINGS, 'Reset to defaults');
+  }
+
+  const OCR_BADGES = {
+    'not-loaded': ['Not loaded', ''],
+    'loading': ['Loading…', 'busy'],
+    'ready': ['Ready', 'ok'],
+    'error': ['Error', 'error']
+  };
+
+  function setOcrState(state, message = '') {
+    setBadge(ocrBadge, OCR_BADGES[state]);
+    ocrMessage.textContent = message;
+    loadOcrBtn.disabled = state === 'loading' || state === 'ready';
+    loadOcrBtn.textContent = state === 'ready' ? 'Model loaded' : 'Load model now';
+  }
+
+  async function loadOcrModel() {
+    setOcrState('loading');
+    try {
+      const { loadTextDetector } = await loadScreenshotModule();
+      await loadTextDetector();
+      setOcrState('ready');
+    } catch (error) {
+      console.error('Error loading text detection model:', error);
+      setOcrState('error', 'Could not load the model: ' + error.message);
+    }
+  }
+
+  // Asks before opening a temporary tab. Returns false when screenshots should be skipped.
+  async function confirmScreenshotTab(videoId, duringSummary) {
+    if (await findYouTubeVideoTab(videoId)) return true;
+    return confirm(duringSummary
+      ? 'Take screenshots too? The video will open in a new muted tab while frames are captured, then close automatically.\n\nCancel to summarize without screenshots.'
+      : 'The video will open in a new muted tab while frames are captured, then close automatically. Continue?');
+  }
+
+  async function runScreenshotJob(url, videoId, settings) {
+    setScreenshotJob(url, { state: 'running', text: 'Starting…' });
+    try {
+      const screenshotModule = await loadScreenshotModule();
+      const record = await screenshotModule.takeScreenshots(url, videoId, settings, {
+        openTabIfNeeded: true,
+        onProgress: (text) => setScreenshotJob(url, { state: 'running', text })
+      });
+      // Previous screenshots stay until the new ones are ready
+      screenshotResults.set(url, record);
+      setOcrState('ready');
+      setScreenshotJob(url, {
+        state: 'done',
+        text: record.shots.length
+          ? `${record.shots.length} screenshot${record.shots.length === 1 ? '' : 's'} ready`
+          : `No text-free area found in ${record.frameCount} frames`
+      });
+    } catch (error) {
+      console.error('Error taking screenshots:', error);
+      setScreenshotJob(url, { state: 'error', text: 'Screenshots failed: ' + error.message });
+    }
+  }
+
+  function setScreenshotJob(url, job) {
+    screenshotJobs.set(url, job);
+    const status = Array.from(urlList.querySelectorAll('.screenshot-status')).find(el => el.dataset.url === url);
+    if (status) {
+      status.className = `screenshot-status ${job.state}`;
+      status.textContent = `📷 ${job.text}`;
+    } else if (Array.from(urlList.querySelectorAll('.summarize-btn')).some(btn => btn.dataset.url === url)) {
+      // The video is on screen but has no status line yet
+      displayUrls();
+    }
+    renderPopupScreenshots(url);
+  }
+
+  function screenshotStatusHtml(url) {
+    const job = screenshotJobs.get(url);
+    if (!job) return '';
+    return `<div class="screenshot-status ${job.state}" data-url="${escapeHtml(url)}">📷 ${escapeHtml(job.text)}</div>`;
+  }
+
+  function revokePopupScreenshotUrls(popup) {
+    (popup._screenshotUrls || []).forEach(URL.revokeObjectURL);
+    popup._screenshotUrls = [];
+  }
+
+  function closeSummaryPopup() {
+    const popup = document.getElementById('summary-popup');
+    if (popup) {
+      revokePopupScreenshotUrls(popup);
+      popup.remove();
+    }
+  }
+
+  // Fills the Screenshots section of the summary popup, if it is open for this video
+  async function renderPopupScreenshots(url) {
+    const popup = document.getElementById('summary-popup');
+    if (!popup || popup.dataset.url !== url) return;
+    const container = popup.querySelector('.popup-screenshots');
+    const generation = (popup._screenshotGeneration || 0) + 1;
+    popup._screenshotGeneration = generation;
+    const job = screenshotJobs.get(url);
+
+    const record = screenshotResults.get(url);
+    const running = job && job.state === 'running';
+    const retakeButton = `<button class="retake-screenshots-btn"${running ? ' disabled' : ''}>${
+      running ? 'Taking screenshots…' : record ? 'Retake screenshots' : 'Take screenshots'}</button>`;
+    const showSection = (body) => {
+      container.innerHTML = `<h4>Screenshots${record && record.shots.length ? ` (${record.shots.length})` : ''}</h4>${body}${retakeButton}`;
+      container.querySelector('.retake-screenshots-btn').addEventListener('click', () => retakeScreenshots(url));
+    };
+
+    const statusNote = running ? `<p class="shots-note">📷 ${escapeHtml(job.text)}</p>`
+      : job && job.state === 'error' ? `<p class="shots-note error">${escapeHtml(job.text)}</p>` : '';
+    if (!record || record.shots.length === 0) {
+      revokePopupScreenshotUrls(popup);
+      const emptyNote = running ? ''
+        : record ? `<p class="shots-note">No text-free area was found in ${record.frameCount} frames. Try a lower detection confidence or min crop size in Screenshot settings.</p>`
+        : '<p class="shots-note">No screenshots in this session. Screenshots are not saved, so they are gone once the side panel closes.</p>';
+      showSection(statusNote + emptyNote);
+      return;
+    }
+
+    const { formatTime } = await loadScreenshotModule();
+    if (popup._screenshotGeneration !== generation || !popup.isConnected) return;
+    revokePopupScreenshotUrls(popup);
+    const largest = record.shots.reduce((best, shot) => (shot.width * shot.height > best.width * best.height ? shot : best));
+    const videoId = extractVideoId(url) || 'video';
+    const figures = record.shots.map((shot, index) => {
+      const objectUrl = URL.createObjectURL(shot.blob);
+      popup._screenshotUrls.push(objectUrl);
+      const time = formatTime(shot.time);
+      const filename = `${videoId}-${time.replace(/:/g, '-')}-${shot.ratio.replace(':', 'x')}.png`;
+      return `
+        <figure class="shot">
+          <a class="shot-thumb" href="${objectUrl}" target="_blank" title="Open full size">
+            <img src="${objectUrl}" alt="Screenshot at ${time}">
+            ${shot === largest && record.shots.length > 1 ? '<span class="shot-badge">Largest</span>' : ''}
+          </a>
+          <figcaption>
+            <span>${time} · ${shot.width}×${shot.height}</span>
+            <span class="shot-actions">
+              <button class="shot-copy" data-index="${index}">Copy</button>
+              <a class="shot-download" href="${objectUrl}" download="${filename}">Download</a>
+            </span>
+          </figcaption>
+        </figure>`;
+    }).join('');
+    showSection(`${statusNote}<p class="shots-note">Not saved: download the ones you want to keep before closing the side panel.</p><div class="shots-grid">${figures}</div>`);
+    container.querySelectorAll('.shot-copy').forEach(button => {
+      button.addEventListener('click', () => copyScreenshot(button, record.shots[Number(button.dataset.index)].blob));
+    });
+  }
+
+  async function copyScreenshot(button, blob) {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
+      button.textContent = 'Copied!';
+    } catch (error) {
+      console.error('Error copying screenshot:', error);
+      button.textContent = 'Copy failed';
+    }
+    setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+  }
+
+  async function retakeScreenshots(url) {
+    const videoId = extractVideoId(url);
+    if (!videoId || screenshotJobs.get(url)?.state === 'running') return;
+    const settings = screenshotSettings || await loadScreenshotSettings();
+    if (await confirmScreenshotTab(videoId, false)) {
+      runScreenshotJob(url, videoId, settings);
+    }
+  }
+
   function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -550,6 +805,8 @@ document.addEventListener('DOMContentLoaded', function() {
   function deleteUrl(url) {
     allUrls = allUrls.filter(item => (typeof item === 'string' ? item : item.url) !== url);
     saveUrlsToStorage(allUrls);
+    screenshotJobs.delete(url);
+    screenshotResults.delete(url);
     
     const totalPages = Math.ceil(allUrls.length / urlsPerPage);
     if (currentPage > totalPages && totalPages > 0) {
@@ -698,14 +955,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function showSummaryPopup(summary, videoUrl) {
     // Remove existing popup if any
-    const existingPopup = document.getElementById('summary-popup');
-    if (existingPopup) {
-      existingPopup.remove();
-    }
-    
+    closeSummaryPopup();
+
     // Create popup element
     const popup = document.createElement('div');
     popup.id = 'summary-popup';
+    popup.dataset.url = videoUrl;
+    popup._screenshotUrls = [];
     popup.innerHTML = `
       <div class="popup-overlay">
         <div class="popup-content">
@@ -718,7 +974,8 @@ document.addEventListener('DOMContentLoaded', function() {
               <strong>Video:</strong> <a href="${videoUrl}" target="_blank">${videoUrl}</a>
               <button class="copy-url-btn" data-url="${videoUrl}">📋 Copy URL</button>
             </div>
-            <div class="summary-text">${summary}</div>
+            <div class="summary-text">${escapeHtml(summary)}</div>
+            <div class="popup-screenshots"></div>
           </div>
         </div>
       </div>
@@ -842,6 +1099,120 @@ document.addEventListener('DOMContentLoaded', function() {
         line-height: 1.6;
         white-space: pre-wrap;
       }
+
+      #summary-popup .popup-screenshots:not(:empty) {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid #eee;
+      }
+
+      #summary-popup .popup-screenshots h4 {
+        margin: 0 0 10px;
+        font-size: 15px;
+      }
+
+      #summary-popup .shots-note {
+        margin: 0 0 10px;
+        font-size: 13px;
+        color: #666;
+      }
+
+      #summary-popup .shots-note.error {
+        color: #a12d2d;
+      }
+
+      #summary-popup .shots-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 12px;
+      }
+
+      #summary-popup .shot {
+        margin: 0;
+      }
+
+      #summary-popup .shot-thumb {
+        position: relative;
+        display: block;
+        overflow: hidden;
+        background: #111;
+        border-radius: 6px;
+      }
+
+      #summary-popup .shot-thumb img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      #summary-popup .shot-badge {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #fff;
+        background: #2e9d5b;
+        border-radius: 999px;
+      }
+
+      #summary-popup .shot figcaption {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+        font-size: 12px;
+        color: #555;
+      }
+
+      #summary-popup .shot-actions {
+        display: flex;
+        gap: 10px;
+      }
+
+      #summary-popup .shot-download,
+      #summary-popup .shot-copy {
+        padding: 0;
+        font: inherit;
+        color: #007acc;
+        text-decoration: none;
+        white-space: nowrap;
+        background: none;
+        border: none;
+        box-shadow: none;
+        cursor: pointer;
+      }
+
+      #summary-popup .shot-download:hover,
+      #summary-popup .shot-copy:hover {
+        text-decoration: underline;
+        transform: none;
+        box-shadow: none;
+      }
+
+      #summary-popup .retake-screenshots-btn {
+        margin-top: 12px;
+        background: #007acc;
+        color: white;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        box-shadow: none;
+      }
+
+      #summary-popup .retake-screenshots-btn:hover {
+        background: #005a99;
+        transform: none;
+      }
+
+      #summary-popup .retake-screenshots-btn:disabled {
+        background: #7aa7c7;
+        cursor: default;
+      }
     `;
     
     document.head.appendChild(style);
@@ -850,9 +1221,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add event listener for close button
     const closeButton = popup.querySelector('.popup-close');
     if (closeButton) {
-      closeButton.addEventListener('click', function() {
-        popup.remove();
-      });
+      closeButton.addEventListener('click', closeSummaryPopup);
     }
 
     // Add event listener for copy button
@@ -867,9 +1236,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Close popup when clicking outside
     popup.querySelector('.popup-overlay').addEventListener('click', function(e) {
       if (e.target === this) {
-        popup.remove();
+        closeSummaryPopup();
       }
     });
+
+    renderPopupScreenshots(videoUrl);
   }
 
   async function summarizeUrl(url) {
@@ -879,6 +1250,18 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!urlItem || !urlItem.subtitles) {
       alert('No subtitles available for this video to summarize');
       return;
+    }
+
+    if (urlItem.summary && !confirm('Re-summarizing will replace the current summary of this video. This cannot be undone. Continue?')) {
+      return;
+    }
+
+    // Screenshots run alongside the summary and don't hold it up
+    const settings = screenshotSettings || await loadScreenshotSettings();
+    const videoId = extractVideoId(url);
+    if (settings.enabled && videoId && screenshotJobs.get(url)?.state !== 'running'
+        && await confirmScreenshotTab(videoId, true)) {
+      runScreenshotJob(url, videoId, settings);
     }
 
     // Find the summarize button for this URL to show loading state
@@ -980,11 +1363,12 @@ document.addEventListener('DOMContentLoaded', function() {
               ${title ? `<div class="video-title">${escapeHtml(title)}</div>` : ''}
               <a href="${url}" target="_blank">${url}</a>
               ${dateAdded ? `<small style="color: #666; display: block;">Added: ${dateAdded}</small>` : ''}
+              ${screenshotStatusHtml(url)}
               ${subtitles ? `<details style="margin-top: 8px;"><summary style="cursor: pointer; color: #007acc;">Subtitles</summary><div style="max-height: 150px; overflow-y: auto; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px; margin-top: 4px;">${subtitles}</div></details>` : '<small style="color: #999;">No subtitles available</small>'}
-              ${summary ? `<details style="margin-top: 8px;"><summary style="cursor: pointer; color: #007acc;">Summary</summary><div style="max-height: 200px; overflow-y: auto; padding: 8px; background: #eef7ff; border-radius: 4px; font-size: 12px; margin-top: 4px; white-space: pre-wrap;">${escapeHtml(summary)}</div></details>` : ''}
             </div>
             <div class="button-group">
               <button class="delete-btn" data-url="${url}" data-index="${startIndex + index}">Delete</button>
+              ${summary ? `<button class="view-summary-btn" data-url="${url}">Summary</button>` : ''}
               <button class="summarize-btn" data-url="${url}" data-index="${startIndex + index}">${summary ? 'Re-summarize' : 'Summarize'}</button>
             </div>
           </div>
@@ -997,6 +1381,18 @@ document.addEventListener('DOMContentLoaded', function() {
         button.addEventListener('click', function() {
           const url = this.getAttribute('data-url');
           deleteUrl(url);
+        });
+      });
+
+      // Reopen the saved summary in the same popup shown after summarizing
+      const viewSummaryButtons = urlList.querySelectorAll('.view-summary-btn');
+      viewSummaryButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const url = this.getAttribute('data-url');
+          const urlItem = allUrls.find(item => typeof item === 'object' && item.url === url);
+          if (urlItem && urlItem.summary) {
+            showSummaryPopup(urlItem.summary, url);
+          }
         });
       });
 
@@ -1110,12 +1506,21 @@ document.addEventListener('DOMContentLoaded', function() {
   testOllamaBtn.addEventListener('click', testOllamaConnection);
   loadWebllmBtn.addEventListener('click', loadWebLLMModel);
   deleteWebllmBtn.addEventListener('click', deleteWebLLMModel);
+  [screenshotEnabledInput, screenshotCountInput, screenshotRatioSelect, screenshotMarginInput,
+    screenshotConfidenceInput, screenshotMinAreaInput].forEach(input => {
+    input.addEventListener('change', saveScreenshotSettingsFromForm);
+  });
+  resetScreenshotSettingsBtn.addEventListener('click', resetScreenshotSettings);
+  loadOcrBtn.addEventListener('click', loadOcrModel);
 
   renderLLMSettings();
   loadUrlsFromStorage();
   loadOllamaUrl();
   loadLLMSelection();
   initWebLLMStatus();
+  setOcrState('not-loaded');
+  loadScreenshotSettings().catch(error => console.error('Error loading screenshot settings:', error));
+  loadScreenshotModule().then(({ deleteLegacyScreenshotStorage }) => deleteLegacyScreenshotStorage()).catch(() => {});
   updateTime();
   updateTabInfo();
 

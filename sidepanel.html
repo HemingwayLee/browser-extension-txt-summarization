@@ -9,12 +9,13 @@
 <body>
   <div class="container">
     <header>
-      <h1>YouTube Subtitle Manager</h1>
+      <h1>YouTube Summarization</h1>
     </header>
     
     <nav class="tabs">
       <button class="tab-btn active" data-tab="current-page">Saved Videos</button>
       <button class="tab-btn" data-tab="llm-config">LLM settings</button>
+      <button class="tab-btn" data-tab="screenshot-config">Screenshot settings</button>
     </nav>
     
     <main>
@@ -138,6 +139,76 @@
           </section>
         </div>
       </div>
+
+      <div id="screenshot-config-tab" class="tab-content">
+        <div class="content">
+          <h2>Screenshot Settings</h2>
+
+          <label class="toggle-row">
+            <span class="toggle-text">
+              <span class="toggle-title">Take screenshots while summarizing</span>
+              <span class="toggle-desc">Captures frames from the video and keeps the largest area of each with no on-screen text.</span>
+            </span>
+            <input type="checkbox" id="screenshotEnabled" class="toggle">
+          </label>
+
+          <section class="provider-card" id="screenshotOptions">
+            <div class="provider-card-header">
+              <h3>Options</h3>
+              <span class="save-state" id="screenshotSaveState" aria-live="polite"></span>
+            </div>
+            <div class="settings-grid">
+              <label class="setting-field">
+                <span class="field-label">Screenshots per video</span>
+                <input type="number" id="screenshotCount" min="1" max="20" class="setting-input">
+              </label>
+              <label class="setting-field">
+                <span class="field-label">Output ratio</span>
+                <select id="screenshotRatio" class="setting-input">
+                  <option value="auto">Auto (match the video)</option>
+                  <option value="16:9">16:9 · landscape</option>
+                  <option value="9:16">9:16 · portrait</option>
+                </select>
+              </label>
+              <label class="setting-field">
+                <span class="field-label">Clearance around text (px)</span>
+                <input type="number" id="screenshotMargin" min="0" max="200" class="setting-input">
+              </label>
+              <label class="setting-field" title="PP-OCR box score (0.3–0.99). Higher means fewer false alarms, but faint text may be missed.">
+                <span class="field-label">Detection confidence</span>
+                <input type="number" id="screenshotConfidence" min="0.3" max="0.99" step="0.05" class="setting-input">
+              </label>
+              <label class="setting-field">
+                <span class="field-label">Min crop size (% of frame)</span>
+                <input type="number" id="screenshotMinArea" min="0" max="100" class="setting-input">
+              </label>
+            </div>
+            <div class="provider-actions">
+              <button id="resetScreenshotSettingsBtn" class="clear-btn">Reset to defaults</button>
+            </div>
+          </section>
+
+          <section class="provider-card">
+            <div class="provider-card-header">
+              <h3>Text detection model</h3>
+              <span class="badge" id="ocrBadge">Not loaded</span>
+            </div>
+            <dl class="provider-details">
+              <dt>Model</dt><dd>PaddleOCR PP-OCRv4 detection (4.7 MB, bundled)</dd>
+              <dt>Runs on</dt><dd>CPU, inside Chrome (onnxruntime-web)</dd>
+            </dl>
+            <p class="provider-message" id="ocrMessage"></p>
+            <div class="provider-actions">
+              <button id="loadOcrBtn">Load model now</button>
+            </div>
+          </section>
+
+          <div class="info">
+            <p>Screenshots are taken from the video's own tab. If the video isn't open, you'll be asked before it opens in a temporary muted tab, which closes when capturing is done.</p>
+            <p>Frames are captured at up to 1080p. Screenshots are not saved: they stay in the summary popup until the side panel closes, so download the ones you want to keep. Use Retake screenshots in the popup to capture new ones.</p>
+          </div>
+        </div>
+      </div>
     </main>
     
     <footer>
@@ -145,6 +216,7 @@
     </footer>
   </div>
   
+  <script src="youtube-tab.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

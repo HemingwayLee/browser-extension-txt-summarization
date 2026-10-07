@@ -1,3 +1,5 @@
+importScripts('youtube-tab.js');
+
 // Enable the side panel on extension startup
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
@@ -83,38 +85,20 @@ async function extractSubtitlesInPage(videoId, languageAliases) {
     }
   }
 
-  // Last resort: open the "Show transcript" panel and read its segments
-  const segmentSelector = 'ytd-transcript-segment-renderer .segment-text';
+  // Last resort: open the "Show transcript" panel and read its segments (older and current layouts)
+  const segmentSelector = 'ytd-transcript-segment-renderer .segment-text, transcript-segment-view-model span[role="text"]';
   if (!document.querySelector(segmentSelector)) {
-    document.querySelector('ytd-video-description-transcript-section-renderer button')?.click();
+    // The description section, which holds the button, loads after the player
+    const transcriptButton = await waitFor(
+      () => document.querySelector('ytd-video-description-transcript-section-renderer button'), 10000);
+    transcriptButton?.click();
   }
   const segments = await waitFor(() => {
     const found = document.querySelectorAll(segmentSelector);
     return found.length > 0 ? found : null;
-  }, 8000);
+  }, 10000);
   if (!segments) return null;
   return Array.from(segments).map(segment => segment.textContent.trim()).filter(Boolean);
-}
-
-function waitForTabComplete(tabId, timeoutMs = 20000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      reject(new Error('Timed out waiting for the YouTube tab to load'));
-    }, timeoutMs);
-    function listener(updatedTabId, changeInfo) {
-      if (updatedTabId === tabId && changeInfo.status === 'complete') {
-        clearTimeout(timer);
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    }
-    chrome.tabs.onUpdated.addListener(listener);
-    // The tab may have finished loading before the listener was added
-    chrome.tabs.get(tabId).then(tab => {
-      if (tab.status === 'complete') listener(tabId, { status: 'complete' });
-    }).catch(() => {});
-  });
 }
 
 async function extractSubtitlesFromTab(tabId, videoId, language) {
@@ -127,35 +111,13 @@ async function extractSubtitlesFromTab(tabId, videoId, language) {
   return injection?.result || null;
 }
 
-// Reads subtitles from a tab that already has the video open. Otherwise, when allowed, opens the
-// video in a new muted tab, reads the subtitles there, closes it and returns focus to the
-// previously active tab. Returns { subtitles, needsTab } where needsTab means no tab was open.
+// Reads subtitles from a tab showing the video, opening a temporary one only when allowed.
+// Returns { subtitles, needsTab } where needsTab means no tab was open.
 async function getYouTubeSubtitles(videoId, language = 'en', openTabIfNeeded = false) {
   console.log(`Fetching subtitles for video ID: ${videoId} with language: ${language}`);
-
-  const tabs = await chrome.tabs.query({ url: ['*://www.youtube.com/watch*', '*://m.youtube.com/watch*'] });
-  const existingTab = tabs.find(t => t.url && new URL(t.url).searchParams.get('v') === videoId);
-  if (existingTab) {
-    return { subtitles: await extractSubtitlesFromTab(existingTab.id, videoId, language) };
-  }
-  if (!openTabIfNeeded) {
-    return { subtitles: null, needsTab: true };
-  }
-
-  const [previousTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  // Opened in the foreground: Chrome defers loading media in background tabs, so the player
-  // might never request captions there
-  const tab = await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${videoId}`, active: true });
-  try {
-    await chrome.tabs.update(tab.id, { muted: true });
-    await waitForTabComplete(tab.id);
-    return { subtitles: await extractSubtitlesFromTab(tab.id, videoId, language) };
-  } finally {
-    await chrome.tabs.remove(tab.id).catch(() => {});
-    if (previousTab) {
-      await chrome.tabs.update(previousTab.id, { active: true }).catch(() => {});
-    }
-  }
+  const { result, needsTab } = await withYouTubeVideoTab(videoId, openTabIfNeeded,
+    (tabId) => extractSubtitlesFromTab(tabId, videoId, language));
+  return { subtitles: result || null, needsTab: needsTab || false };
 }
 
 // Message handler

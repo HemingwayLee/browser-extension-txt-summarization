@@ -36,7 +36,11 @@ A Chrome extension that opens a side panel on the right side of your browser win
 - `background.js` - Background service worker
 - `icons/` - Extension icons (`icon.svg` source, PNGs at 16/32/48/128 px)
 - `webllm-worker.js` - Web worker that runs the in-browser Qwen3-8B model
+- `youtube-tab.js` - Finds or temporarily opens a video's YouTube tab (used for subtitles and screenshots)
+- `screenshot/` - Text-free screenshots taken while summarizing, adapted from auto-youtube-screenshot-pure-frontend: frame capture, PP-OCR text detection, largest text-free crop (kept in memory only, never stored)
+- `models/ch_PP-OCRv4_det_infer.onnx` - PaddleOCR PP-OCRv4 text detection model
 - `vendor/web-llm/` - Bundled [WebLLM](https://github.com/mlc-ai/web-llm) 0.2.85 (Apache-2.0)
+- `vendor/onnxruntime-web/` - Bundled [onnxruntime-web](https://github.com/microsoft/onnxruntime) 1.30.0 WASM build (MIT)
 
 ## Customization
 
