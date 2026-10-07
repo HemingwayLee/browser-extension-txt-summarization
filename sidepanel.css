@@ -417,121 +417,237 @@ footer p {
   font-size: 12px;
 }
 
-.server-input-section {
-  display: flex;
-  gap: 12px;
-  margin: 24px 0;
-  align-items: center;
+/* LLM settings */
+.current-llm {
+  padding: 16px;
+  margin-bottom: 24px;
+  background: rgba(102, 126, 234, 0.08);
+  border: 1px solid rgba(102, 126, 234, 0.25);
+  border-radius: 10px;
 }
 
-.server-input {
+.current-llm-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #667eea;
+}
+
+.current-llm-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.current-llm-status {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #666;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #9aa0a6;
+}
+
+.status-dot.ok { background: #2e9d5b; }
+.status-dot.warn { background: #d98a00; }
+.status-dot.error { background: #d64545; }
+
+.settings-heading {
+  margin-bottom: 10px;
+  font-size: 15px;
+  color: #333;
+}
+
+.mode-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.mode-option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 2px solid rgba(102, 126, 234, 0.2);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.mode-option:hover {
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+.mode-option:has(input:checked) {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.08);
+}
+
+.mode-option input {
+  margin-top: 3px;
+  accent-color: #667eea;
+}
+
+.mode-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mode-option-title {
+  font-weight: 600;
+  color: #333;
+}
+
+.mode-option-desc {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+}
+
+.mode-tag {
+  margin-left: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.12);
+  border-radius: 999px;
+}
+
+.provider-card {
+  padding: 16px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 10px;
+}
+
+.provider-card.active {
+  border-color: #667eea;
+  box-shadow: 0 0 0 1px #667eea;
+}
+
+.provider-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.provider-card-header h3 {
+  font-size: 16px;
+  color: #333;
+}
+
+.badge {
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #555;
+  background: #eceff1;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge.ok { color: #1e7a45; background: #e3f4ea; }
+.badge.warn { color: #8a5a00; background: #fff3d6; }
+.badge.error { color: #a12d2d; background: #fbe4e4; }
+.badge.busy { color: #4a5bd4; background: rgba(102, 126, 234, 0.12); }
+
+.provider-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.provider-details dt {
+  color: #888;
+}
+
+.provider-details dd {
+  color: #333;
+  word-break: break-word;
+}
+
+.progress {
+  height: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  background: rgba(102, 126, 234, 0.15);
+  border-radius: 999px;
+}
+
+.progress-bar {
+  width: 0;
+  height: 100%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.3s ease;
+}
+
+.content p.provider-message {
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.content p.provider-message:empty {
+  display: none;
+}
+
+.provider-actions,
+.ollama-input-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ollama-input-section {
+  margin-bottom: 12px;
+}
+
+.provider-card button {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #888;
+}
+
+.ollama-input {
   flex: 1;
-  padding: 12px 16px;
-  border: 2px solid rgba(102, 126, 234, 0.3);
-  border-radius: 8px;
+  min-width: 140px;
+  padding: 8px 12px;
   font-size: 14px;
   background: rgba(255, 255, 255, 0.9);
-  transition: all 0.3s ease;
+  border: 2px solid rgba(102, 126, 234, 0.3);
+  border-radius: 8px;
 }
 
-.server-input:focus {
+.ollama-input:focus {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.server-list-section {
-  margin: 24px 0;
-}
-
-.server-list-section h3 {
-  color: #333;
-  margin-bottom: 16px;
-  font-size: 16px;
-}
-
-.server-list {
-  margin-bottom: 16px;
-}
-
-.server-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  margin-bottom: 8px;
-  background: rgba(255, 255, 255, 0.7);
-  border-radius: 8px;
-  border: 1px solid rgba(102, 126, 234, 0.2);
-  transition: all 0.3s ease;
-}
-
-.server-item:hover {
-  background: rgba(255, 255, 255, 0.9);
-  border-color: rgba(102, 126, 234, 0.4);
-}
-
-.server-item.active {
-  background: rgba(102, 126, 234, 0.1);
-  border-color: #667eea;
-}
-
-.server-info {
-  flex: 1;
-  margin-right: 12px;
-}
-
-.server-url {
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-  margin-bottom: 4px;
-}
-
-.server-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.activate-btn {
-  background: #28a745;
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.3s ease;
-}
-
-.activate-btn:hover {
-  background: #218838;
-  transform: none;
-  box-shadow: none;
-}
-
-.active-badge {
-  background: #667eea;
-  color: white;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.server-status {
-  margin-top: 16px;
-  padding: 16px;
-  background: rgba(102, 126, 234, 0.1);
-  border-radius: 8px;
-  border-left: 4px solid #667eea;
-}
-
-.server-status p {
-  color: #333;
-  font-size: 14px;
-  margin: 0;
 }
 
 @media (max-width: 400px) {
@@ -556,7 +672,6 @@ footer p {
   }
 
   .url-input-section,
-  .server-input-section,
   .search-section {
     flex-direction: column;
   }

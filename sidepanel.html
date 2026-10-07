@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Side Panel Extension</title>
+  <title>YouTube Summarization</title>
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
@@ -14,8 +14,7 @@
     
     <nav class="tabs">
       <button class="tab-btn active" data-tab="current-page">Saved Videos</button>
-      <button class="tab-btn" data-tab="server-config">Server Config</button>
-      <button class="tab-btn" data-tab="gemini-config">LLM settings</button>
+      <button class="tab-btn" data-tab="llm-config">LLM settings</button>
     </nav>
     
     <main>
@@ -26,8 +25,8 @@
           <div class="llm-selection-section">
             <label for="llmSelect"><strong>Summarization LLM:</strong></label>
             <select id="llmSelect">
-              <option value="gemini" selected>Gemini</option>
-              <option value="ollama">Ollama</option>
+              <option value="webllm" selected>Qwen3-8B (in browser, WebLLM)</option>
+              <option value="ollama">gemma3:12b (Ollama)</option>
             </select>
           </div>
 
@@ -67,77 +66,82 @@
         </div>
       </div>
       
-      <div id="server-config-tab" class="tab-content">
-        <div class="content">
-          <h2>Local Server Configuration</h2>
-          
-          <div class="server-input-section">
-            <input type="text" id="serverUrlInput" placeholder="Enter server URL (e.g., 127.0.0.1:5000)" class="server-input">
-            <button id="addServerBtn" class="add-btn">Add Server</button>
-          </div>
-          
-          <div class="server-list-section">
-            <h3>Configured Servers</h3>
-            <div id="serverList" class="server-list"></div>
-          </div>
-          
-          <div class="server-status">
-            <p id="serverStatus">Server status will appear here</p>
-          </div>
-        </div>
-      </div>
-      
-      <div id="gemini-config-tab" class="tab-content">
+      <div id="llm-config-tab" class="tab-content">
         <div class="content">
           <h2>LLM Settings</h2>
-          
-          <div class="gemini-input-section">
-            <input type="password" id="geminiApiKeyInput" placeholder="Enter Gemini API Key..." class="gemini-input">
-            <button id="saveApiKeyBtn" class="add-btn">Save API Key</button>
-            <button id="clearApiKeyBtn" class="clear-btn">Clear</button>
-          </div>
-          
-          <div class="gemini-status-section">
-            <h3>API Key Status</h3>
-            <div id="geminiStatus" class="gemini-status">
-              <p id="apiKeyStatus">No API key configured</p>
+
+          <div class="current-llm" id="currentLlmCard">
+            <div class="current-llm-label">Currently using</div>
+            <div class="current-llm-main">
+              <span class="status-dot" id="currentLlmDot"></span>
+              <span id="currentLlmName">WebLLM · Qwen3-8B</span>
             </div>
-          </div>
-          
-          <div class="gemini-info">
-            <h3>Instructions</h3>
-            <p>Get your Gemini API key from <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a></p>
-            <p>Your API key will be stored securely in local storage.</p>
+            <div class="current-llm-status" id="currentLlmStatus">Checking…</div>
           </div>
 
-          <div class="ollama-section">
-            <h3>Ollama Configuration</h3>
+          <h3 class="settings-heading">Summarization mode</h3>
+          <div class="mode-options" role="radiogroup" aria-label="Summarization mode">
+            <label class="mode-option">
+              <input type="radio" name="llmMode" value="webllm">
+              <span class="mode-option-body">
+                <span class="mode-option-title">WebLLM <span class="mode-tag">Default</span></span>
+                <span class="mode-option-desc">Qwen3-8B, runs on your GPU inside Chrome</span>
+              </span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="llmMode" value="ollama">
+              <span class="mode-option-body">
+                <span class="mode-option-title">Ollama</span>
+                <span class="mode-option-desc">gemma3:12b, needs an Ollama server</span>
+              </span>
+            </label>
+          </div>
 
+          <section class="provider-card" id="webllmCard">
+            <div class="provider-card-header">
+              <h3>WebLLM</h3>
+              <span class="badge" id="webllmBadge">Checking…</span>
+            </div>
+            <dl class="provider-details">
+              <dt>Model</dt><dd>Qwen3-8B (4-bit), 16K context</dd>
+              <dt>Download</dt><dd>About 5 GB, once; kept in Chrome's cache</dd>
+              <dt>GPU</dt><dd id="webgpuStatus">Checking…</dd>
+            </dl>
+            <div class="progress" id="webllmProgress" hidden>
+              <div class="progress-bar" id="webllmProgressBar"></div>
+            </div>
+            <p class="provider-message" id="webllmMessage"></p>
+            <div class="provider-actions">
+              <button id="loadWebllmBtn">Download &amp; load model</button>
+              <button id="deleteWebllmBtn" class="clear-btn">Delete downloaded model</button>
+            </div>
+          </section>
+
+          <section class="provider-card" id="ollamaCard">
+            <div class="provider-card-header">
+              <h3>Ollama</h3>
+              <span class="badge" id="ollamaBadge">Not configured</span>
+            </div>
+            <dl class="provider-details">
+              <dt>Model</dt><dd>gemma3:12b</dd>
+            </dl>
+            <label class="field-label" for="ollamaUrlInput">Server URL</label>
             <div class="ollama-input-section">
-              <input type="text" id="ollamaUrlInput" placeholder="Enter Ollama URL (e.g., http://localhost:11434)" class="gemini-input">
-              <button id="saveOllamaUrlBtn" class="add-btn">Save URL</button>
+              <input type="text" id="ollamaUrlInput" placeholder="http://localhost:11434" class="ollama-input">
+              <button id="saveOllamaUrlBtn">Save</button>
               <button id="clearOllamaUrlBtn" class="clear-btn">Clear</button>
             </div>
-
-            <div class="ollama-status-section">
-              <h3>Ollama URL Status</h3>
-              <div id="ollamaStatus" class="gemini-status">
-                <p id="ollamaUrlStatus">No Ollama URL configured</p>
-              </div>
+            <p class="provider-message" id="ollamaMessage"></p>
+            <div class="provider-actions">
+              <button id="testOllamaBtn">Test connection</button>
             </div>
-
-            <div class="gemini-info">
-              <h3>Instructions</h3>
-              <p>Enter the URL where your Ollama instance is running (typically http://localhost:11434)</p>
-              <p>The URL will be stored securely in local storage.</p>
-            </div>
-          </div>
+          </section>
         </div>
       </div>
     </main>
     
     <footer>
-      <p>Side Panel Extension v1.4</p>
+      <p>YouTube Summarization v1.4</p>
     </footer>
   </div>
   

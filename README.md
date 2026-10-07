@@ -1,4 +1,4 @@
-# Chrome Side Panel Extension
+# YouTube Summarization
 
 A Chrome extension that opens a side panel on the right side of your browser window when you click the extension icon.
 
@@ -34,7 +34,9 @@ A Chrome extension that opens a side panel on the right side of your browser win
 - `sidepanel.css` - Styling for the side panel
 - `sidepanel.js` - JavaScript functionality
 - `background.js` - Background service worker
-- `icon.svg` - Extension icon
+- `icons/` - Extension icons (`icon.svg` source, PNGs at 16/32/48/128 px)
+- `webllm-worker.js` - Web worker that runs the in-browser Qwen3-8B model
+- `vendor/web-llm/` - Bundled [WebLLM](https://github.com/mlc-ai/web-llm) 0.2.85 (Apache-2.0)
 
 ## Customization
 
