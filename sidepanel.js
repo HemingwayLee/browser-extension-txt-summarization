@@ -29,6 +29,17 @@ document.addEventListener('DOMContentLoaded', function() {
   const loadWebllmBtn = document.getElementById('loadWebllmBtn');
   const deleteWebllmBtn = document.getElementById('deleteWebllmBtn');
 
+  const managerCard = document.getElementById('managerCard');
+  const managerBadge = document.getElementById('managerBadge');
+  const managerIdInput = document.getElementById('managerIdInput');
+  const saveManagerIdBtn = document.getElementById('saveManagerIdBtn');
+  const resetManagerIdBtn = document.getElementById('resetManagerIdBtn');
+  const managerModelSelect = document.getElementById('managerModelSelect');
+  const managerProgress = document.getElementById('managerProgress');
+  const managerProgressBar = document.getElementById('managerProgressBar');
+  const managerMessage = document.getElementById('managerMessage');
+  const refreshManagerBtn = document.getElementById('refreshManagerBtn');
+
   const screenshotEnabledInput = document.getElementById('screenshotEnabled');
   const screenshotOptions = document.getElementById('screenshotOptions');
   const screenshotCountInput = document.getElementById('screenshotCount');
@@ -73,6 +84,15 @@ document.addEventListener('DOMContentLoaded', function() {
   const OLLAMA_MODEL = 'gemma3:12b';
   let ollamaUrl = '';
 
+  // WebLLM Model Manager (demo-webllm) runs models it downloaded for other extensions.
+  // Its "key" manifest field fixes this ID on every computer.
+  const DEFAULT_MANAGER_ID = 'kpfphjjelobankiknfkcigkcfnnhcddk';
+  let managerId = DEFAULT_MANAGER_ID;
+  let managerModel = '';
+  // { managerId, modelId, engine, ready } for the current connection to the manager
+  let managerConnection = null;
+  let managerProgressHandler = null;
+
   // Loaded on first use; holds the OCR model and screenshot storage
   const loadScreenshotModule = () => import('./screenshot/screenshots.js');
   let screenshotSettings = null;
@@ -88,6 +108,8 @@ document.addEventListener('DOMContentLoaded', function() {
   let webllmState = { status: 'checking', progress: 0, busy: false, message: '' };
   // Ollama: not-configured | checking | ok | model-missing | unreachable
   let ollamaState = { status: 'not-configured', message: '' };
+  // Manager: checking | ok | no-models | unreachable | loading | loaded | error
+  let managerState = { status: 'checking', models: [], progress: 0, busy: false, message: '' };
 
   function switchTab(tabName) {
     tabButtons.forEach(btn => btn.classList.remove('active'));
@@ -98,6 +120,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (tabName === 'llm-config') {
       refreshWebLLMCacheStatus();
+      refreshManagerModels();
     }
   }
 
@@ -168,7 +191,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function setSelectedLLM(value, save) {
-    selectedLLM = value === 'ollama' ? 'ollama' : 'webllm';
+    selectedLLM = ['ollama', 'manager'].includes(value) ? value : 'webllm';
     llmSelect.value = selectedLLM;
     llmModeRadios.forEach(radio => { radio.checked = radio.value === selectedLLM; });
     if (save) {
@@ -187,7 +210,7 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('Error loading LLM selection:', chrome.runtime.lastError);
         return;
       }
-      // Older versions stored 'gemini'; anything other than Ollama falls back to WebLLM
+      // Older versions stored 'gemini'; anything unknown falls back to WebLLM
       setSelectedLLM(result.selectedLLM, false);
     });
   }
@@ -210,6 +233,16 @@ document.addEventListener('DOMContentLoaded', function() {
     'unreachable': ['Not reachable', 'error']
   };
 
+  const MANAGER_BADGES = {
+    'checking': ['Checking…', 'busy'],
+    'ok': ['Connected', 'ok'],
+    'no-models': ['No models', 'warn'],
+    'unreachable': ['Not found', 'error'],
+    'loading': ['Loading', 'busy'],
+    'loaded': ['Ready', 'ok'],
+    'error': ['Error', 'error']
+  };
+
   function setBadge(element, [text, tone]) {
     element.textContent = text;
     element.className = tone ? `badge ${tone}` : 'badge';
@@ -226,6 +259,17 @@ document.addEventListener('DOMContentLoaded', function() {
         default: return ['error', 'Set the Ollama server URL below'];
       }
     }
+    if (selectedLLM === 'manager') {
+      switch (managerState.status) {
+        case 'loaded': return ['ok', managerState.busy ? 'Summarizing…' : 'Model loaded in the manager'];
+        case 'ok': return ['ok', 'Connected; the model loads when you summarize'];
+        case 'checking': return ['', 'Checking the manager…'];
+        case 'loading': return ['', `Loading model ${Math.round(managerState.progress * 100)}%`];
+        case 'no-models': return ['warn', 'Download a model in WebLLM Model Manager first'];
+        case 'unreachable': return ['error', 'WebLLM Model Manager is not installed or the ID is wrong'];
+        default: return ['error', 'Model failed to load; see details below'];
+      }
+    }
     switch (webllmState.status) {
       case 'loaded': return ['ok', webllmState.busy ? 'Summarizing…' : 'Model loaded and ready'];
       case 'downloaded': return ['ok', 'Downloaded; loads when you summarize'];
@@ -238,13 +282,17 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function renderLLMSettings() {
-    const isOllama = selectedLLM === 'ollama';
-    currentLlmName.textContent = isOllama ? `Ollama · ${OLLAMA_MODEL}` : 'WebLLM · Qwen3-8B';
+    currentLlmName.textContent = {
+      ollama: `Ollama · ${OLLAMA_MODEL}`,
+      manager: `Shared · ${managerModel || 'no model selected'}`,
+      webllm: 'WebLLM · Qwen3-8B'
+    }[selectedLLM];
     const [tone, statusText] = describeActiveLLM();
     currentLlmDot.className = tone ? `status-dot ${tone}` : 'status-dot';
     currentLlmStatus.textContent = statusText;
-    webllmCard.classList.toggle('active', !isOllama);
-    ollamaCard.classList.toggle('active', isOllama);
+    webllmCard.classList.toggle('active', selectedLLM === 'webllm');
+    ollamaCard.classList.toggle('active', selectedLLM === 'ollama');
+    managerCard.classList.toggle('active', selectedLLM === 'manager');
 
     const webllmBadgeInfo = WEBLLM_BADGES[webllmState.status];
     setBadge(webllmBadge, webllmState.status === 'loading'
@@ -263,6 +311,24 @@ document.addEventListener('DOMContentLoaded', function() {
     ollamaMessage.textContent = ollamaState.message;
     testOllamaBtn.disabled = !ollamaUrl || ollamaState.status === 'checking';
     clearOllamaUrlBtn.disabled = !ollamaUrl;
+
+    setBadge(managerBadge, managerState.status === 'loading'
+      ? [`Loading ${Math.round(managerState.progress * 100)}%`, 'busy']
+      : MANAGER_BADGES[managerState.status]);
+    managerProgress.hidden = managerState.status !== 'loading';
+    managerProgressBar.style.width = `${Math.round(managerState.progress * 100)}%`;
+    managerMessage.textContent = managerState.message;
+    const modelOptions = managerState.models.length ? managerState.models : [''];
+    if (managerModelSelect.options.length !== modelOptions.length
+        || modelOptions.some((id, i) => managerModelSelect.options[i].value !== id)) {
+      managerModelSelect.replaceChildren(...modelOptions.map(id => new Option(id || 'No models available', id)));
+    }
+    managerModelSelect.value = managerModel;
+    const managerWorking = managerState.busy || ['checking', 'loading'].includes(managerState.status);
+    managerModelSelect.disabled = managerWorking || !managerState.models.length;
+    refreshManagerBtn.disabled = managerWorking;
+    saveManagerIdBtn.disabled = managerWorking;
+    resetManagerIdBtn.disabled = managerWorking || managerId === DEFAULT_MANAGER_ID;
   }
 
   function setWebLLMState(changes) {
@@ -272,6 +338,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function setOllamaState(changes) {
     ollamaState = { ...ollamaState, ...changes };
+    renderLLMSettings();
+  }
+
+  function setManagerState(changes) {
+    managerState = { ...managerState, ...changes };
     renderLLMSettings();
   }
 
@@ -418,6 +489,79 @@ document.addEventListener('DOMContentLoaded', function() {
         message: `Can't reach Ollama at ${ollamaUrl}. Make sure Ollama is running and the URL is correct.`
       });
     }
+  }
+
+  async function loadManagerSettings() {
+    const result = await storageGet(['managerId', 'managerModel']);
+    managerId = result.managerId || DEFAULT_MANAGER_ID;
+    managerModel = result.managerModel || '';
+    managerIdInput.value = managerId;
+    await refreshManagerModels();
+  }
+
+  function storeManagerSettings() {
+    chrome.storage.local.set({ managerId, managerModel }, function() {
+      if (chrome.runtime.lastError) {
+        console.error('Error saving manager settings:', chrome.runtime.lastError);
+      }
+    });
+  }
+
+  async function saveManagerId() {
+    const id = managerIdInput.value.trim();
+    if (!/^[a-p]{32}$/.test(id)) {
+      setManagerState({ message: 'An extension ID is 32 letters from a to p. Copy it from the manager page.' });
+      return;
+    }
+    if (id !== managerId) {
+      disconnectManager();
+      managerId = id;
+      storeManagerSettings();
+    }
+    await refreshManagerModels();
+  }
+
+  function resetManagerId() {
+    managerIdInput.value = DEFAULT_MANAGER_ID;
+    saveManagerId();
+  }
+
+  // Asks the manager which models it has downloaded. Fails if no extension has that ID.
+  async function refreshManagerModels() {
+    if (managerState.busy || managerState.status === 'loading') return;
+    setManagerState({ status: 'checking', message: '' });
+    let models;
+    try {
+      const response = await chrome.runtime.sendMessage(managerId, { type: 'listModels' });
+      if (response?.error) throw new Error(response.error);
+      models = response?.models || [];
+    } catch (error) {
+      console.error('Error listing manager models:', error);
+      disconnectManager();
+      setManagerState({
+        status: 'unreachable',
+        models: [],
+        message: `Can't reach WebLLM Model Manager (${error.message}). Install it and check the ID shown on its page.`
+      });
+      return;
+    }
+
+    if (!models.includes(managerModel)) {
+      // Prefer the same model as the built-in WebLLM option when the manager has it
+      managerModel = models.includes(WEBLLM_MODEL_ID) ? WEBLLM_MODEL_ID : models[0] || '';
+      storeManagerSettings();
+    }
+    const loaded = managerConnection?.ready && managerConnection.modelId === managerModel;
+    setManagerState(models.length
+      ? { status: loaded ? 'loaded' : 'ok', models, message: '' }
+      : { status: 'no-models', models, message: 'The manager has no downloaded models. Open WebLLM Model Manager and download one.' });
+  }
+
+  function selectManagerModel() {
+    managerModel = managerModelSelect.value;
+    storeManagerSettings();
+    const loaded = managerConnection?.ready && managerConnection.modelId === managerModel;
+    setManagerState({ status: loaded ? 'loaded' : 'ok', message: '' });
   }
 
   function storageGet(keys) {
@@ -927,7 +1071,84 @@ document.addEventListener('DOMContentLoaded', function() {
     } finally {
       webllmProgressHandler = null;
     }
+    return summarizeInChunks((prompt) => generateWithWebLLM(engine, prompt), subtitles, onStatus);
+  }
 
+  function disconnectManager() {
+    const connection = managerConnection;
+    managerConnection = null;
+    // Disconnecting our own end doesn't fire our onDisconnect handler
+    connection?.engine?.port.disconnect();
+  }
+
+  // Connects to WebLLM Model Manager and loads managerModel there. The model runs in the
+  // manager's service worker; this extension only sends prompts and gets the answers.
+  function getManagerConnection() {
+    if (!managerModel) {
+      return Promise.reject(new Error('No shared model selected. Pick one under Shared model in LLM settings.'));
+    }
+    if (managerConnection?.managerId === managerId && managerConnection.modelId === managerModel) {
+      return managerConnection.promise;
+    }
+    disconnectManager();
+
+    // WebLLM leaves pending requests hanging when the port closes, so requests race this instead
+    let rejectDisconnected;
+    const disconnected = new Promise((_, reject) => { rejectDisconnected = reject; });
+    disconnected.catch(() => {});
+    const connection = { managerId, modelId: managerModel, ready: false, disconnected };
+    managerConnection = connection;
+
+    connection.promise = (async () => {
+      setManagerState({ status: 'loading', progress: 0, message: '' });
+      const webllm = await import('./vendor/web-llm/web-llm.js');
+      if (managerConnection !== connection) throw new Error('Cancelled because the settings changed.');
+      connection.engine = new webllm.ExtensionServiceWorkerMLCEngine({
+        extensionId: connection.managerId,
+        initProgressCallback: (report) => {
+          setManagerState({ progress: report.progress });
+          managerProgressHandler?.(report);
+        },
+        onDisconnect: () => {
+          rejectDisconnected(new Error('Lost the connection to WebLLM Model Manager. It may have been reloaded or removed.'));
+          if (managerConnection === connection) {
+            managerConnection = null;
+            if (connection.ready) setManagerState({ status: 'ok' });
+          }
+        }
+      });
+      // The manager only loads models it already downloaded, so this never starts a download
+      await Promise.race([
+        connection.engine.reload(connection.modelId, { context_window_size: WEBLLM_CONTEXT_WINDOW }),
+        disconnected
+      ]);
+      connection.ready = true;
+      if (managerConnection === connection) setManagerState({ status: 'loaded', progress: 1 });
+      return connection;
+    })();
+    connection.promise.catch((error) => {
+      if (managerConnection !== connection) return;
+      disconnectManager();
+      setManagerState({ status: 'error', message: 'Could not load the model in the manager: ' + error.message });
+    });
+    return connection.promise;
+  }
+
+  async function callManagerLLM(subtitles, onStatus) {
+    managerProgressHandler = (report) => onStatus(`Loading model ${Math.round(report.progress * 100)}%`);
+    let connection;
+    try {
+      connection = await getManagerConnection();
+    } finally {
+      managerProgressHandler = null;
+    }
+    return summarizeInChunks(
+      (prompt) => Promise.race([generateWithWebLLM(connection.engine, prompt), connection.disconnected]),
+      subtitles, onStatus);
+  }
+
+  // generate(prompt) returns the model's answer
+  async function summarizeInChunks(generate, subtitles, onStatus) {
     // Split long transcripts on line boundaries into chunks that fit the context window
     const chunks = [''];
     for (const line of subtitlesToText(subtitles).split('\n')) {
@@ -939,18 +1160,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (chunks.length === 1) {
       onStatus('Summarizing...');
-      return generateWithWebLLM(engine, `${SUMMARY_PROMPT}\n\n${chunks[0]}`);
+      return generate(`${SUMMARY_PROMPT}\n\n${chunks[0]}`);
     }
 
     // Too long for one pass: note each part's key points, then summarize the notes
     const notes = [];
     for (const [index, chunk] of chunks.entries()) {
       onStatus(`Summarizing part ${index + 1}/${chunks.length}...`);
-      notes.push(await generateWithWebLLM(engine,
+      notes.push(await generate(
         `以下是YouTube影片台詞的第${index + 1}部分（共${chunks.length}部分），請條列這部分的重點：\n\n${chunk}`));
     }
     onStatus('Combining summary...');
-    return generateWithWebLLM(engine, `${SUMMARY_PROMPT}\n\n${notes.join('\n\n')}`);
+    return generate(`${SUMMARY_PROMPT}\n\n${notes.join('\n\n')}`);
   }
 
   function showSummaryPopup(summary, videoUrl) {
@@ -1273,14 +1494,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     try {
       let summary;
+      const onStatus = (status) => {
+        if (summarizeButton) summarizeButton.textContent = status;
+      };
       if (selectedLLM === 'ollama') {
         summary = await callOllamaAPI(urlItem.subtitles);
+      } else if (selectedLLM === 'manager') {
+        setManagerState({ busy: true });
+        try {
+          summary = await callManagerLLM(urlItem.subtitles, onStatus);
+        } finally {
+          setManagerState({ busy: false });
+        }
       } else {
         setWebLLMState({ busy: true });
         try {
-          summary = await callWebLLM(urlItem.subtitles, (status) => {
-            if (summarizeButton) summarizeButton.textContent = status;
-          });
+          summary = await callWebLLM(urlItem.subtitles, onStatus);
         } finally {
           setWebLLMState({ busy: false });
         }
@@ -1506,6 +1735,15 @@ document.addEventListener('DOMContentLoaded', function() {
   testOllamaBtn.addEventListener('click', testOllamaConnection);
   loadWebllmBtn.addEventListener('click', loadWebLLMModel);
   deleteWebllmBtn.addEventListener('click', deleteWebLLMModel);
+  saveManagerIdBtn.addEventListener('click', saveManagerId);
+  resetManagerIdBtn.addEventListener('click', resetManagerId);
+  managerIdInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      saveManagerId();
+    }
+  });
+  managerModelSelect.addEventListener('change', selectManagerModel);
+  refreshManagerBtn.addEventListener('click', refreshManagerModels);
   [screenshotEnabledInput, screenshotCountInput, screenshotRatioSelect, screenshotMarginInput,
     screenshotConfidenceInput, screenshotMinAreaInput].forEach(input => {
     input.addEventListener('change', saveScreenshotSettingsFromForm);
@@ -1518,6 +1756,7 @@ document.addEventListener('DOMContentLoaded', function() {
   loadOllamaUrl();
   loadLLMSelection();
   initWebLLMStatus();
+  loadManagerSettings();
   setOcrState('not-loaded');
   loadScreenshotSettings().catch(error => console.error('Error loading screenshot settings:', error));
   loadScreenshotModule().then(({ deleteLegacyScreenshotStorage }) => deleteLegacyScreenshotStorage()).catch(() => {});

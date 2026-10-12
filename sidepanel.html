@@ -28,6 +28,7 @@
             <select id="llmSelect">
               <option value="webllm" selected>Qwen3-8B (in browser, WebLLM)</option>
               <option value="ollama">gemma3:12b (Ollama)</option>
+              <option value="manager">Shared model (WebLLM Model Manager)</option>
             </select>
           </div>
 
@@ -96,6 +97,13 @@
                 <span class="mode-option-desc">gemma3:12b, needs an Ollama server</span>
               </span>
             </label>
+            <label class="mode-option">
+              <input type="radio" name="llmMode" value="manager">
+              <span class="mode-option-body">
+                <span class="mode-option-title">Shared model</span>
+                <span class="mode-option-desc">A model downloaded in the WebLLM Model Manager extension</span>
+              </span>
+            </label>
           </div>
 
           <section class="provider-card" id="webllmCard">
@@ -135,6 +143,33 @@
             <p class="provider-message" id="ollamaMessage"></p>
             <div class="provider-actions">
               <button id="testOllamaBtn">Test connection</button>
+            </div>
+          </section>
+
+          <section class="provider-card" id="managerCard">
+            <div class="provider-card-header">
+              <h3>Shared model</h3>
+              <span class="badge" id="managerBadge">Checking…</span>
+            </div>
+            <dl class="provider-details">
+              <dt>Runs in</dt><dd>WebLLM Model Manager extension; nothing is downloaded here</dd>
+            </dl>
+            <label class="field-label" for="managerIdInput">Manager extension ID</label>
+            <div class="ollama-input-section">
+              <input type="text" id="managerIdInput" class="ollama-input" spellcheck="false">
+              <button id="saveManagerIdBtn">Save</button>
+              <button id="resetManagerIdBtn" class="clear-btn">Reset</button>
+            </div>
+            <label class="field-label" for="managerModelSelect">Model</label>
+            <div class="ollama-input-section">
+              <select id="managerModelSelect" class="ollama-input" disabled></select>
+            </div>
+            <div class="progress" id="managerProgress" hidden>
+              <div class="progress-bar" id="managerProgressBar"></div>
+            </div>
+            <p class="provider-message" id="managerMessage"></p>
+            <div class="provider-actions">
+              <button id="refreshManagerBtn">Refresh models</button>
             </div>
           </section>
         </div>

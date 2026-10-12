@@ -42,6 +42,14 @@ A Chrome extension that opens a side panel on the right side of your browser win
 - `vendor/web-llm/` - Bundled [WebLLM](https://github.com/mlc-ai/web-llm) 0.2.85 (Apache-2.0)
 - `vendor/onnxruntime-web/` - Bundled [onnxruntime-web](https://github.com/microsoft/onnxruntime) 1.30.0 WASM build (MIT)
 
+## Summarization LLMs
+
+Pick one in **LLM settings**:
+
+- **WebLLM** (default): downloads Qwen3-8B (about 5 GB) into this extension and runs it on the GPU through WebGPU.
+- **Ollama**: sends the transcript to an Ollama server running `gemma3:12b`.
+- **Shared model**: uses a model already downloaded in the [WebLLM Model Manager](../demo-webllm) extension, so nothing is downloaded here. The model runs in the manager and the answers come back over `chrome.runtime` messaging. The manager's ID defaults to `kpfphjjelobankiknfkcigkcfnnhcddk`; change it in the settings if yours differs. Qwen3-8B is selected automatically when the manager has it.
+
 ## Customization
 
 You can customize the extension by:
